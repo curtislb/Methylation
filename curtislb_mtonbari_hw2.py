@@ -1,20 +1,11 @@
 import math
 import numpy as np
 from sklearn.linear_model import LinearRegression
+from sklearn.metrics import mean_squared_error, r2_score
 from sklearn.preprocessing import Imputer
 
 N_FEATURES = 33
 CHR1_LINES = 379551
-
-def rmse(y_pred, y_true):
-    sse = 0.0
-    n = 0
-    for i in xrange(len(y_pred)):
-        if not math.isnan(y_true[i]):
-            err = y_pred[i] - y_true[i]
-            sse += err * err
-            n += 1
-    return math.sqrt(sse / n)
 
 def naive_mean_impute(fname, fsize):
     with open(fname) as f:
@@ -71,17 +62,24 @@ def train_test_sample_masks(fname, fsize):
         return train_mask, test_mask
 
 if __name__ == '__main__':
-    y_pred = naive_mean_impute('data/intersected_final_chr1_cutoff_20_train_revised.bed', CHR1_LINES)
     y_true = sample_vals_from_file('data/intersected_final_chr1_cutoff_20_test.bed', CHR1_LINES)
-    print 'Naive Mean RMSE:', rmse(y_pred, y_true)
+    train_mask, test_mask = train_test_sample_masks('data/intersected_final_chr1_cutoff_20_test.bed', CHR1_LINES)
+    val_mask = train_mask | test_mask
+    
+    # Naive mean imputation
+    y_pred = naive_mean_impute('data/intersected_final_chr1_cutoff_20_train_revised.bed', CHR1_LINES)
+    r2 = r2_score(y_true[val_mask], y_pred[val_mask])
+    rmse = math.sqrt(mean_squared_error(y_true[val_mask], y_pred[val_mask]))
+    print 'Naive Mean R^2:', r2
+    print 'Naive Mean RMSE:', rmse
 
+    # Regression model imputation
     X = beta_from_train('data/intersected_final_chr1_cutoff_20_train_revised.bed', CHR1_LINES)
     X = Imputer(strategy='mean', axis=1).transform(X)
-
-    train_mask, test_mask = train_test_sample_masks('data/intersected_final_chr1_cutoff_20_test.bed', CHR1_LINES)
-    
     lr = LinearRegression()
     lr.fit(X[train_mask], y_true[train_mask])
-    
     y_pred = lr.predict(X[test_mask])
-    print 'Model RMSE:', rmse(y_pred, y_true[test_mask])
+    r2 = r2_score(y_true[test_mask], y_pred)
+    rmse = math.sqrt(mean_squared_error(y_true[test_mask], y_pred))
+    print 'Model R^2:', r2
+    print 'Model RMSE:', rmse
