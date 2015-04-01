@@ -1,7 +1,7 @@
 import math
 import matplotlib.pyplot as plt
 import numpy as np
-from sklearn.linear_model import LinearRegression
+import sklearn.linear_model as lm
 from sklearn.metrics import mean_squared_error, r2_score
 from sklearn.preprocessing import Imputer
 
@@ -84,14 +84,14 @@ if __name__ == '__main__':
     train_mask, test_mask = train_test_sample_masks('data/intersected_final_chr1_cutoff_20_test.bed', CHR1_LINES)
     val_mask = train_mask | test_mask
     
-    # Naive mean imputation
-    y_pred = naive_mean_impute('data/intersected_final_chr1_cutoff_20_train_revised.bed', CHR1_LINES)
-    analyze(y_true[val_mask], y_pred[val_mask], 'Naive Mean')
+#     # Naive mean imputation
+#     y_pred = naive_mean_impute('data/intersected_final_chr1_cutoff_20_train_revised.bed', CHR1_LINES)
+#     analyze(y_true[val_mask], y_pred[val_mask], 'Naive Mean')
 
-    # Regression model imputation
+    # Linear model imputation
     X = beta_from_train('data/intersected_final_chr1_cutoff_20_train_revised.bed', CHR1_LINES)
     X = Imputer(strategy='mean', axis=1).transform(X)
-    lr = LinearRegression()
-    lr.fit(X[train_mask], y_true[train_mask])
-    y_pred = lr.predict(X[test_mask])
-    analyze(y_true[test_mask], y_pred, 'Model')
+    model = lm.PassiveAggressiveRegressor()
+    model.fit(X[train_mask], y_true[train_mask])
+    y_pred = model.predict(X[test_mask])
+    analyze(y_true[test_mask], y_pred, 'PassiveAggressiveRegressor')
