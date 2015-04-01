@@ -1,4 +1,5 @@
 import math
+import matplotlib.pyplot as plt
 import numpy as np
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_squared_error, r2_score
@@ -60,6 +61,23 @@ def train_test_sample_masks(fname, fsize):
                 test_mask[i] = True
             i += 1
         return train_mask, test_mask
+    
+def residuals(y_true, y_pred):
+    count = len(y_true)
+    res = np.empty(count, float)
+    for i in xrange(count):
+        res[i] = y_true[i] - y_pred[i]
+    return res
+
+def analyze(y_true, y_pred, method=''):
+    print method, 'R^2 =', r2_score(y_true, y_pred)
+    print method, 'RMSE =', math.sqrt(mean_squared_error(y_true, y_pred))
+    res = residuals(y_true, y_pred)
+    plt.clf()
+    plt.hist(res, 50)
+    plt.xlabel('Residual')
+    plt.ylabel('Count')
+    plt.savefig(method + '_residuals.png')
 
 if __name__ == '__main__':
     y_true = sample_vals_from_file('data/intersected_final_chr1_cutoff_20_test.bed', CHR1_LINES)
@@ -68,10 +86,7 @@ if __name__ == '__main__':
     
     # Naive mean imputation
     y_pred = naive_mean_impute('data/intersected_final_chr1_cutoff_20_train_revised.bed', CHR1_LINES)
-    r2 = r2_score(y_true[val_mask], y_pred[val_mask])
-    rmse = math.sqrt(mean_squared_error(y_true[val_mask], y_pred[val_mask]))
-    print 'Naive Mean R^2:', r2
-    print 'Naive Mean RMSE:', rmse
+    analyze(y_true[val_mask], y_pred[val_mask], 'Naive Mean')
 
     # Regression model imputation
     X = beta_from_train('data/intersected_final_chr1_cutoff_20_train_revised.bed', CHR1_LINES)
@@ -79,7 +94,4 @@ if __name__ == '__main__':
     lr = LinearRegression()
     lr.fit(X[train_mask], y_true[train_mask])
     y_pred = lr.predict(X[test_mask])
-    r2 = r2_score(y_true[test_mask], y_pred)
-    rmse = math.sqrt(mean_squared_error(y_true[test_mask], y_pred))
-    print 'Model R^2:', r2
-    print 'Model RMSE:', rmse
+    analyze(y_true[test_mask], y_pred, 'Model')
