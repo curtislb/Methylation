@@ -5,25 +5,37 @@ import sklearn.linear_model as lm
 from sklearn.metrics import mean_squared_error, r2_score
 from sklearn.preprocessing import Imputer
 
-N_FEATURES = 33
+# N_FEATURES = 33
+N_FEATURES = 99
 CHR1_LINES = 379551
 
-def naive_mean_impute(fname, fsize):
+def parse_line(l):
+    tokens = l.rstrip().split()
+    return int(tokens[1]), [float(b) for b in tokens[4:-1]]
+
+def beta_from_train(fname, fsize):
     with open(fname) as f:
-        y = np.empty(fsize, float)
+        X = np.empty((fsize, N_FEATURES), float)
+        curr_pos, curr_beta = parse_line(f.readline())
+        next_pos, next_beta = parse_line(f.readline())
+        line = f.readline()
         i = 0
-        for line in f:
-            beta = [float(b) for b in line.rstrip().split()[4:-1]]
-            b_sum = 0.0
-            b_count = 0
-            for b in beta:
-                if not math.isnan(b):
-                    b_sum += b
-                    b_count += 1
-            y[i] = b_sum / float(b_count)
+#         for line in f:
+#             row = parse_line(line)[1]
+#             X[i,:] = np.array(row)
+        while line != '':
+            prev_pos, prev_beta = curr_pos, curr_beta
+            curr_pos, curr_beta = next_pos, next_beta
+            next_pos, next_beta = parse_line(line)
+            row = curr_beta[:]
+#             row.append(curr_pos - prev_pos)
+            row.extend(prev_beta)
+#             row.append(next_pos - curr_pos)
+            row.extend(next_beta)
+            line = f.readline()
             i += 1
-        return y
-    
+        return X
+
 def sample_vals_from_file(fname, fsize):
     with open(fname) as f:
         y = np.empty(fsize, float)
@@ -32,16 +44,6 @@ def sample_vals_from_file(fname, fsize):
             y[i] = float(line.rstrip().split()[-2])
             i += 1
         return y
-    
-def beta_from_train(fname, fsize):
-    with open(fname) as f:
-        X = np.empty((fsize, N_FEATURES), float)
-        i = 0
-        for line in f:
-            beta = [float(b) for b in line.rstrip().split()[4:-1]]
-            X[i,:] = np.array(beta)
-            i += 1
-        return X
 
 def train_test_sample_masks(fname, fsize):
     with open(fname) as f:
@@ -60,8 +62,15 @@ def train_test_sample_masks(fname, fsize):
                 train_mask[i] = False
                 test_mask[i] = True
             i += 1
-        return train_mask, test_mask
-    
+#         return train_mask, test_mask
+        return train_mask[1:-1], test_mask[1:-1]
+
+def naive_mean_impute(X):
+    y_pred = np.empty(X.shape[0], float)
+    for i in xrange(X.shape[0]):
+        y_pred[i] = np.mean(X[i,:])
+    return y_pred
+
 def residuals(y_true, y_pred):
     count = len(y_true)
     res = np.empty(count, float)
@@ -80,18 +89,18 @@ def analyze(y_true, y_pred, method=''):
     plt.savefig(method + '_residuals.png')
 
 if __name__ == '__main__':
-    y_true = sample_vals_from_file('data/intersected_final_chr1_cutoff_20_test.bed', CHR1_LINES)
-    train_mask, test_mask = train_test_sample_masks('data/intersected_final_chr1_cutoff_20_test.bed', CHR1_LINES)
-    val_mask = train_mask | test_mask
-    
-#     # Naive mean imputation
-#     y_pred = naive_mean_impute('data/intersected_final_chr1_cutoff_20_train_revised.bed', CHR1_LINES)
-#     analyze(y_true[val_mask], y_pred[val_mask], 'Naive Mean')
-
-    # Linear model imputation
     X = beta_from_train('data/intersected_final_chr1_cutoff_20_train_revised.bed', CHR1_LINES)
     X = Imputer(strategy='mean', axis=1).transform(X)
+    
+    y_true = sample_vals_from_file('data/intersected_final_chr1_cutoff_20_test.bed', CHR1_LINES)[1:-1]
+    train_mask, test_mask = train_test_sample_masks('data/intersected_final_chr1_cutoff_20_test.bed', CHR1_LINES)
+    
+#     # Naive mean imputation
+#     y_pred = naive_mean_impute(X)
+#     analyze(y_true[test_mask], y_pred[test_mask], 'NaiveMean')
+
+    # Linear model imputation
     model = lm.PassiveAggressiveRegressor()
     model.fit(X[train_mask], y_true[train_mask])
     y_pred = model.predict(X[test_mask])
-    analyze(y_true[test_mask], y_pred, 'PassiveAggressiveRegressor')
+    analyze(y_true[test_mask], y_pred, 'PassiveAggressiveRegressor_neighbor')
