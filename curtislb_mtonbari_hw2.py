@@ -1,17 +1,33 @@
 import math
 import matplotlib.pyplot as plt
 import numpy as np
+import sklearn.cross_validation as cv
 import sklearn.linear_model as lm
 from sklearn.metrics import mean_squared_error, r2_score
-from sklearn.preprocessing import Imputer
 
 # N_FEATURES = 33
 N_FEATURES = 99
 CHR1_LINES = 379551
 
+def mean_vals(arr):
+    total = 0.0
+    count = 0
+    for x in arr:
+        if not math.isnan(x):
+            total += x
+            count += 1
+    return total / count
+
+def impute_mean(arr):
+    mean = mean_vals(arr)
+    for i in xrange(len(arr)):
+        if math.isnan(arr[i]):
+            arr[i] = mean
+    return arr
+
 def parse_line(l):
     tokens = l.rstrip().split()
-    return int(tokens[1]), [float(b) for b in tokens[4:-1]]
+    return int(tokens[1]), impute_mean([float(b) for b in tokens[4:-1]])
 
 def beta_from_train(fname, fsize):
     with open(fname) as f:
@@ -22,7 +38,6 @@ def beta_from_train(fname, fsize):
         i = 0
 #         for line in f:
 #             row = parse_line(line)[1]
-#             X[i,:] = np.array(row)
         while line != '':
             prev_pos, prev_beta = curr_pos, curr_beta
             curr_pos, curr_beta = next_pos, next_beta
@@ -33,6 +48,7 @@ def beta_from_train(fname, fsize):
 #             row.append(next_pos - curr_pos)
             row.extend(next_beta)
             line = f.readline()
+            X[i,:] = np.array(row)
             i += 1
         return X
 
@@ -83,24 +99,39 @@ def analyze(y_true, y_pred, method=''):
     print method, 'RMSE =', math.sqrt(mean_squared_error(y_true, y_pred))
     res = residuals(y_true, y_pred)
     plt.clf()
-    plt.hist(res, 50)
+    plt.hist(res, bins=50)
     plt.xlabel('Residual')
     plt.ylabel('Count')
     plt.savefig(method + '_residuals.png')
 
 if __name__ == '__main__':
     X = beta_from_train('data/intersected_final_chr1_cutoff_20_train_revised.bed', CHR1_LINES)
-    X = Imputer(strategy='mean', axis=1).transform(X)
-    
     y_true = sample_vals_from_file('data/intersected_final_chr1_cutoff_20_test.bed', CHR1_LINES)[1:-1]
     train_mask, test_mask = train_test_sample_masks('data/intersected_final_chr1_cutoff_20_test.bed', CHR1_LINES)
     
 #     # Naive mean imputation
 #     y_pred = naive_mean_impute(X)
-#     analyze(y_true[test_mask], y_pred[test_mask], 'NaiveMean')
+#     analyze(y_true[test_mask], y_pred[test_mask], 'NaiveMean_neighbor')
 
-    # Linear model imputation
-    model = lm.PassiveAggressiveRegressor()
-    model.fit(X[train_mask], y_true[train_mask])
-    y_pred = model.predict(X[test_mask])
-    analyze(y_true[test_mask], y_pred, 'PassiveAggressiveRegressor_neighbor')
+#     # Linear model imputation
+#     model = lm.LinearRegression()
+#     model.fit(X[train_mask], y_true[train_mask])
+#     y_pred = model.predict(X[test_mask])
+#     analyze(y_true[test_mask], y_pred, 'LinearRegression_cv')
+
+    val_mask = train_mask | test_mask
+    X = X[val_mask]
+    y_true = y_true[val_mask]
+    
+    # K-fold cross validation
+    kf = cv.KFold(len(y_true), n_folds=5)
+    model = lm.SGDRegressor()
+    fold = 1
+    for train, test in kf:
+        print '--- Fold', fold, '-------------------'
+#         y_pred = naive_mean_impute(X[test])
+#         analyze(y_true[test], y_pred, 'NaiveMean_neighbor_cv' + str(fold))
+        model.fit(X[train], y_true[train])
+        y_pred = model.predict(X[test])
+        analyze(y_true[test], y_pred, 'SGDRegressor_neighbor_cv' + str(fold))
+        fold += 1
